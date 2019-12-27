@@ -3,54 +3,47 @@ import cv2
 
 
 class TimeLapse:
-    m_path = None;
     m_colorFrames = []
     m_greyFrames = []
-    m_smoothIndexes = []
-    m_groupSize = None
-    m_lookback = None
+    m_resultIndexes = []
     mk_threshold = 100  # TODO: Adjustable?
 
-    def __init__(self, path, groupSize, lookback):
-        self.m_path = path
-        self.m_groupSize = groupSize
-        self.m_lookback = lookback
+    def __init__(self, path):
+        self.Read_(path)
 
-        self.Read_()
-
-    def Calculate(self):
+    def Smooth(self, groupSize, lookback):
         best = []
         minDiff = None
-        for i in range(self.m_groupSize):
-            hist, diff = self.Recurse_(i, [], 0) # TODO: This can be parallelized.
+        for i in range(groupSize):
+            hist, diff = self.Recurse_(groupSize, lookback, i, [], 0)  # TODO: This can be parallelized.
             if minDiff is None or diff < minDiff:  # TODO: Handle two minimums?
                 minDiff = diff  # TODO: "diff" is lookback only. At this point, we can lookforward too. Calc lookforward here to make a better decision?
                 best = hist
 
-        self.m_smoothIndexes = best
+        self.m_resultIndexes = best
 
     def Save(self, file):
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         shape = self.m_colorFrames[0].shape
         out = cv2.VideoWriter(file, fourcc, 25.0, (shape[1], shape[0]))  # TODO: Get original framerate
-        for i in self.m_smoothIndexes:
+        for i in self.m_resultIndexes:
             out.write(self.m_colorFrames[i])
 
         out.release()
 
-    def PlotResults(self):
+    def PlotResultDiff(self):
         vals = []
 
-        for i in self.m_smoothIndexes:
-            if i == self.m_smoothIndexes[0]:
+        for i in self.m_resultIndexes:
+            if i == self.m_resultIndexes[0]:
                 # first frame
-                vals.append(self.Diff_(self.m_smoothIndexes[0], self.m_smoothIndexes[1]) * 2)
+                vals.append(self.Diff_(self.m_resultIndexes[0], self.m_resultIndexes[1]) * 2)
                 continue
 
-            if i == self.m_smoothIndexes[len(self.m_smoothIndexes) - 1]:
+            if i == self.m_resultIndexes[len(self.m_resultIndexes) - 1]:
                 # last frame
-                vals.append(self.Diff_(self.m_smoothIndexes[len(self.m_smoothIndexes) - 1],
-                                       self.m_smoothIndexes[len(self.m_smoothIndexes) - 2]) * 2)
+                vals.append(self.Diff_(self.m_resultIndexes[len(self.m_resultIndexes) - 1],
+                                       self.m_resultIndexes[len(self.m_resultIndexes) - 2]) * 2)
                 continue
 
             vals.append(self.Diff_(i, i + 1) + self.Diff_(i, i - 1))
@@ -59,27 +52,27 @@ class TimeLapse:
         plt.ylabel('some numbers')
         plt.show()  # TODO: Plot should not be continuous (dots not lines)
 
-    def prune(self, threshold):
+    def Prune(self, threshold):
         pass  # TODO
 
-    def Recurse_(self, idx, hist, diff):
-        assert idx >= len(hist) * self.m_groupSize
+    def Recurse_(self, groupSize, lookback, idx, hist, diff):
+        assert idx >= len(hist) * groupSize
 
         hist.append(idx)
 
-        startIdx = len(hist) * self.m_groupSize
+        startIdx = len(hist) * groupSize
 
-        if startIdx + self.m_groupSize - 1 >= len(
+        if startIdx + groupSize - 1 >= len(
                 self.m_greyFrames):  # TODO: Consider ways of handling remainder frames
             return hist, diff
 
         minDiffIdx = None
         minDiff = None
-        for i in range(self.m_groupSize):
+        for i in range(groupSize):
             iidx = startIdx + i
             idiff = 0
 
-            for l in range(self.m_lookback):
+            for l in range(lookback):
                 back = len(hist) - 1 - l
                 if back < 0:
                     break
@@ -90,13 +83,12 @@ class TimeLapse:
                 minDiff = idiff
 
         diff += minDiff
-        return self.Recurse_(minDiffIdx, hist,
-                             diff)  # Only called once, not real recursion. Maybe once we branch or do multiple passes
+        return self.Recurse_(groupSize, lookback, minDiffIdx, hist, diff)  # Only called once, not real recursion. Maybe once we branch or do multiple passes
 
-    def Read_(self):
-        cap = cv2.VideoCapture(self.m_path)
+    def Read_(self, path):
+        cap = cv2.VideoCapture(path)
 
-        while (cap.isOpened()): # TODO: Can this be parallelized? At least the conversion to greyscale
+        while (cap.isOpened()):  # TODO: Can this be parallelized? At least the conversion to greyscale
             ret, frame = cap.read()
 
             if not ret:
