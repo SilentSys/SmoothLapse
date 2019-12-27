@@ -6,12 +6,20 @@ class TimeLapse:
     m_colorFrames = []
     m_greyFrames = []
     m_resultIndexes = []
+    m_frameRate = None
+
     mk_threshold = 100  # TODO: Adjustable?
 
     def __init__(self, path):
         self.Read_(path)
 
     def Smooth(self, groupSize, lookback):
+        if groupSize < 2:
+            raise Exception("Invalid groupSize")
+
+        if lookback < 1:
+            raise Exception("Invalid lookback")
+
         best = []
         minDiff = None
         for i in range(groupSize):
@@ -22,10 +30,13 @@ class TimeLapse:
 
         self.m_resultIndexes = best
 
-    def Save(self, file):
+    def SaveResult(self, file):
+        if not self.m_resultIndexes:
+            raise Exception("No result to save")
+
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         shape = self.m_colorFrames[0].shape
-        out = cv2.VideoWriter(file, fourcc, 25.0, (shape[1], shape[0]))  # TODO: Get original framerate
+        out = cv2.VideoWriter(file, fourcc, self.m_frameRate, (shape[1], shape[0]))
         for i in self.m_resultIndexes:
             out.write(self.m_colorFrames[i])
 
@@ -53,7 +64,7 @@ class TimeLapse:
         plt.show()  # TODO: Plot should not be continuous (dots not lines)
 
     def Prune(self, threshold):
-        pass  # TODO
+        raise Exception("Not implemented") # TODO
 
     def Recurse_(self, groupSize, lookback, idx, hist, diff):
         assert idx >= len(hist) * groupSize
@@ -87,6 +98,8 @@ class TimeLapse:
 
     def Read_(self, path):
         cap = cv2.VideoCapture(path)
+
+        self.m_frameRate = cap.get(cv2.CAP_PROP_FPS)
 
         while (cap.isOpened()):  # TODO: Can this be parallelized? At least the conversion to greyscale
             ret, frame = cap.read()
