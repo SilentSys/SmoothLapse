@@ -76,7 +76,7 @@ class TimeLapse:
         with self.m_lock:
             return self.m_state is State.done
 
-    def SaveResult(self, file):
+    def SaveResult(self, file, frameRateOverride=None):
         with self.m_lock:
             if self.m_state is not State.done:
                 raise Exception("Invalid in this state")
@@ -84,13 +84,18 @@ class TimeLapse:
             if not self.m_resultIndexes:
                 raise Exception("No result to save")
 
+            if frameRateOverride:
+                frameRate = frameRateOverride
+            else:
+                frameRate = self.m_frameRate
+
             cap = cv2.VideoCapture(self.m_path)
             ret, frame = cap.read()
             colorIdx = 0
 
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             shape = frame.shape
-            out = cv2.VideoWriter(file, fourcc, self.m_frameRate, (shape[1], shape[0]))
+            out = cv2.VideoWriter(file, fourcc, frameRate, (shape[1], shape[0]))
             for i in self.m_resultIndexes:
                 while colorIdx < i:
                     ret, frame = cap.read()

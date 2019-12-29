@@ -8,7 +8,8 @@ parser.add_argument("input", type=str, help="Input video file")
 parser.add_argument("output", type=str, help="Output video file")
 parser.add_argument("groupSize", type=int, help="Frame group size")
 parser.add_argument("lookback", type=int, help="Frame lookback")
-parser.add_argument("-t", "--threshold", type=int, help="Diff threshold",)
+parser.add_argument("-t", "--threshold", type=int, help="Diff threshold")
+parser.add_argument("-f", "--fps", type=int, help="Output framerate override")
 
 args = parser.parse_args()
 
@@ -28,6 +29,9 @@ while not t.isDone():
 print("\n", end="")
 
 print("Saving to file...")
-t.SaveResult(args.output)
+if args.fps:
+    t.SaveResult(args.output, args.fps)
+else:
+    t.SaveResult(args.output)
 
 print("Done.")
