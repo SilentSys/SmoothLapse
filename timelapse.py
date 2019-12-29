@@ -47,15 +47,12 @@ class TimeLapse:
         t.start()
         if blocking:
             t.join()
-        else:
-            pass
 
     def Smooth_(self, groupSize, lookback):
         best = []
         minDiff = None
         for i in range(groupSize):
-            hist, diff = self.Recurse_(groupSize, lookback, i, [],
-                                       0)  # TODO: This can be parallelized. Should use processes, not threads to avoid GIL
+            hist, diff = self.Calculate_(groupSize, lookback, i)  # TODO: This can be parallelized. Should use processes, not threads to avoid GIL
             if minDiff is None or diff < minDiff:  # TODO: Handle two minimums?
                 minDiff = diff  # TODO: "diff" is lookback only. At this point, we can lookforward too. Calc lookforward here to make a better decision?
                 best = hist
@@ -147,40 +144,42 @@ class TimeLapse:
 
         cv2.destroyAllWindows()
 
-    def Recurse_(self, groupSize, lookback, idx, hist, diff):
-        assert idx >= len(hist) * groupSize
+    def Calculate_(self, groupSize, lookback, idx):
+        hist = []
+        diff = 0
 
-        hist.append(idx)
+        while True:
+            assert idx >= len(hist) * groupSize
 
-        startIdx = len(hist) * groupSize
+            hist.append(idx)
 
-        if startIdx + groupSize - 1 >= len(
-                self.m_greyFrames):  # TODO: Consider ways of handling remainder frames
-            return hist, diff
+            startIdx = len(hist) * groupSize
 
-        minDiffIdx = None
-        minDiff = None
-        for i in range(groupSize):
-            iidx = startIdx + i
-            idiff = 0
+            if startIdx + groupSize - 1 >= len(
+                    self.m_greyFrames):  # TODO: Consider ways of handling remainder frames
+                return hist, diff
 
-            for l in range(lookback):
-                back = len(hist) - 1 - l
-                if back < 0:
-                    break
-                idiff += self.Diff_(iidx, hist[back])
+            minDiffIdx = None
+            minDiff = None
+            for i in range(groupSize):
+                iidx = startIdx + i
+                idiff = 0
 
-            if minDiff is None or idiff < minDiff:  # TODO: Handle branching in case of two minimums?
-                minDiffIdx = iidx
-                minDiff = idiff
+                for l in range(lookback):
+                    back = len(hist) - 1 - l
+                    if back < 0:
+                        break
+                    idiff += self.Diff_(iidx, hist[back])
 
-        diff += minDiff
+                if minDiff is None or idiff < minDiff:
+                    minDiffIdx = iidx
+                    minDiff = idiff
 
-        with self.m_lock:
-            self.m_progress += 100 / len(self.m_greyFrames)
+            diff += minDiff
+            idx = minDiffIdx
 
-        return self.Recurse_(groupSize, lookback, minDiffIdx, hist,
-                             diff)  # TODO: Only called once, not real recursion. Switch to loop
+            with self.m_lock:
+                self.m_progress += 100 / len(self.m_greyFrames)
 
     def Read_(self):
         cap = cv2.VideoCapture(self.m_path)
