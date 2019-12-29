@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import cv2
 import threading
 from enum import Enum
+from framebuffer import FrameBuffer
 
 
 class State(Enum):
@@ -12,9 +13,9 @@ class State(Enum):
 
 class TimeLapse:
     m_path = None
-    m_greyFrames = []
     m_resultIndexes = []
     m_frameRate = None
+    m_numFrames = None
 
     m_lock = threading.RLock()
     m_progress = 0  # lock required
@@ -52,7 +53,7 @@ class TimeLapse:
         best = []
         minDiff = None
         for i in range(groupSize):
-            hist, diff = self.Calculate_(groupSize, lookback, i)  # TODO: This can be parallelized. Should use processes, not threads to avoid GIL
+            hist, diff = self.Calculate_(groupSize, lookback, i)  # TODO: This can be parallelized. Should use processes, not threads to avoid GIL. DONT RUN SEQUENTIALLY
             if minDiff is None or diff < minDiff:  # TODO: Handle two minimums?
                 minDiff = diff  # TODO: "diff" is lookback only. At this point, we can lookforward too. Calc lookforward here to make a better decision?
                 best = hist
@@ -73,7 +74,7 @@ class TimeLapse:
         with self.m_lock:
             return self.m_state is State.done
 
-    def SaveResult(self, file, frameRateOverride=None):
+    def SaveResult(self, file, frameRateOverride=None): # TODO: Async with progress like Smooth
         with self.m_lock:
             if self.m_state is not State.done:
                 raise Exception("Invalid in this state")
@@ -108,20 +109,21 @@ class TimeLapse:
                 raise Exception("Invalid in this state")
 
             vals = []
+            resultFrames = self.getResultFrames_()
 
-            for i in range(len(self.m_resultIndexes)):
+            for i in range(len(resultFrames)):
                 if i == 0:
                     # first frame
-                    vals.append(self.Diff_(self.m_resultIndexes[0], self.m_resultIndexes[1]) * 2)
+                    vals.append(self.Diff_(resultFrames[0], resultFrames[1]) * 2)
 
                 elif i == len(self.m_resultIndexes) - 1:
                     # last frame
-                    vals.append(self.Diff_(self.m_resultIndexes[len(self.m_resultIndexes) - 1],
-                                           self.m_resultIndexes[len(self.m_resultIndexes) - 2]) * 2)
+                    vals.append(self.Diff_(resultFrames[len(resultFrames) - 1],
+                                           resultFrames[len(resultFrames) - 2]) * 2)
 
                 else:
-                    vals.append(self.Diff_(self.m_resultIndexes[i], self.m_resultIndexes[i + 1]) +
-                                self.Diff_(self.m_resultIndexes[i], self.m_resultIndexes[i - 1]))  # should we really go both ways?
+                    vals.append(self.Diff_(resultFrames[i], resultFrames[i + 1]) +
+                                self.Diff_(resultFrames[i], resultFrames[i - 1]))  # should we really go both ways?
 
             plt.plot(vals)
             plt.ylabel('some numbers')
@@ -132,9 +134,11 @@ class TimeLapse:
             if self.m_state is not State.done:
                 raise Exception("Invalid in this state")
 
-            for i in range(len(self.m_resultIndexes)):
+            resultFrames = self.getResultFrames_()
+
+            for i in range(len(resultFrames)):
                 if i != self.m_resultIndexes[0]:
-                    diff = cv2.absdiff(self.m_greyFrames[self.m_resultIndexes[i]], self.m_greyFrames[self.m_resultIndexes[i - 1]])  # Duplicate from Diff_
+                    diff = cv2.absdiff(resultFrames[i], resultFrames[i - 1])  # Duplicate from Diff_
                     ret, diff = cv2.threshold(diff, threshold, 255, cv2.THRESH_BINARY)
 
                     cv2.imshow('frame', diff)
@@ -146,17 +150,21 @@ class TimeLapse:
 
     def Calculate_(self, groupSize, lookback, idx):
         hist = []
+        histFrames = []
         diff = 0
+
+        # Once buffer is thread/process safe, and calculation is parallelized, the buffer should be shared by all processes
+        consumer = FrameBuffer(self.m_path, groupSize).getConsumer()
 
         while True:
             assert idx >= len(hist) * groupSize
 
             hist.append(idx)
+            histFrames.append(consumer.getFrame(idx)) # TODO: Should not be storing all. Delete old ones
 
             startIdx = len(hist) * groupSize
 
-            if startIdx + groupSize - 1 >= len(
-                    self.m_greyFrames):  # TODO: Consider ways of handling remainder frames
+            if startIdx + groupSize - 1 >= self.m_numFrames:  # TODO: Consider ways of handling remainder frames
                 return hist, diff
 
             minDiffIdx = None
@@ -169,7 +177,7 @@ class TimeLapse:
                     back = len(hist) - 1 - l
                     if back < 0:
                         break
-                    idiff += self.Diff_(iidx, hist[back])
+                    idiff += self.Diff_(consumer.getFrame(iidx), histFrames[back])
 
                 if minDiff is None or idiff < minDiff:
                     minDiffIdx = iidx
@@ -178,28 +186,28 @@ class TimeLapse:
             diff += minDiff
             idx = minDiffIdx
 
+            # For multiprocessing, progress will need to be stored in a shared memory map using "Value". It has a built in lock fyi
             with self.m_lock:
-                self.m_progress += 100 / len(self.m_greyFrames)
+                self.m_progress += 100 / self.m_numFrames
 
     def Read_(self):
         cap = cv2.VideoCapture(self.m_path)
 
         self.m_frameRate = cap.get(cv2.CAP_PROP_FPS)
-
-        while (cap.isOpened()):  # TODO: Can this be parallelized? Pipelined?
-            ret, frame = cap.read()
-
-            if not ret:
-                break
-
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            frame = cv2.resize(frame, (100, 100))
-            self.m_greyFrames.append(frame)
+        self.m_numFrames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
         cap.release()
 
     def Diff_(self, A, B):
-        diff = cv2.absdiff(self.m_greyFrames[A], self.m_greyFrames[B])
+        diff = cv2.absdiff(A, B)
         ret, thresh = cv2.threshold(diff, self.mk_threshold, 1, cv2.THRESH_BINARY)
         sum = cv2.sumElems(thresh)[0]
         return sum
+
+    def getResultFrames_(self):
+        resultFrames = []
+        consumer = FrameBuffer(self.m_path, 0).getConsumer()
+        for f in self.m_resultIndexes:
+            resultFrames.append(consumer.getFrame(f))
+
+        return resultFrames

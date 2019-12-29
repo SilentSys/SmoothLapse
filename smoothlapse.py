@@ -13,7 +13,7 @@ parser.add_argument("-f", "--fps", type=int, help="Output framerate override")
 
 args = parser.parse_args()
 
-print("Loading video...")
+print("Starting...")
 if args.threshold:
     t = TimeLapse(args.input, threshold=args.threshold)
 else:
