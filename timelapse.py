@@ -82,6 +82,7 @@ class TimeLapse:
 
         with self.m_lock:
             self.m_state = State.done
+            self.m_progress = 100
 
     def getProgress(self):
         with self.m_lock:
