@@ -28,12 +28,12 @@ pip install -r requirements.txt
 python smoothlapse.py input.mpg output.mp4 10 10
 ```
 
-### Ubuntu CLI (WIP, NEEDS TESTING)
+### Ubuntu 19.10 CLI
 ```
 git clone https://github.com/SilentSys/SmoothLapse.git SmoothLapse
 cd SmoothLapse
 python3 -m venv venv
-venv/Scripts/activate
+source venv/Scripts/activate
 pip install -r requirements.txt
 python smoothlapse.py input.mpg output.mp4 10 10
 ```
