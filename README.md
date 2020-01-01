@@ -2,6 +2,7 @@
 Smooth 3D printer timelapses without any g-code modification
 
 ##Demos
+
 [![SmoothLapse Demo #1: Smooth 3d printed timelapses](https://i.imgur.com/2IVodfx.png)](https://www.youtube.com/watch?v=7PBDSTGyKH0)
 
 [![SmoothLapse Demo #2: Smooth 3d printed timelapses](https://imgur.com/SCa3PiG.png)](https://www.youtube.com/watch?v=v2vSaOxXVXg)
